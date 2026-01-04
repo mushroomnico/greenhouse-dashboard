@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Supabase Verbindungstest</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        pre { background-color: #f4f4f4; padding: 15px; border-radius: 5px; }
+        .success { border-left: 5px solid green; }
+        .error { border-left: 5px solid red; }
+    </style>
+</head>
+<body>
+    <h1>Supabase Verbindungstest für 'pflanzen'-Tabelle</h1>
+    <p>Ergebnis des Ladeversuchs:</p>
+    <pre id="result">Lade Daten...</pre>
+
+<script>
+    const SUPABASE_URL = 'https://ixlwcourvdblienxfexn.supabase.co'; 
+    // BITTE ERSETZEN: Fügen Sie hier den NEUESTEN 'anon' 'public' Key aus Ihren Supabase API-Einstellungen ein.
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4bHdjb3VydmRibGllbnhmZXhuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQxNjY3MzEsImV4cCI6MjA2OTc0MjczMX0.B4BYlhw1azNCankb6AXGrKGKBYaC4MBd3V0tzRjIqts';
+
+    const resultElement = document.getElementById('result');
+
+    async function testConnection() {
+        try {
+            // WICHTIG: Stellen Sie sicher, dass die "supabase" Variable global verfügbar ist
+            if (typeof supabase === 'undefined' || typeof supabase.createClient !== 'function') {
+                throw new Error("Supabase-Bibliothek nicht korrekt geladen.");
+            }
+            const { createClient } = supabase;
+            const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+            // Simulierter Login (ersetzen Sie mit einem echten Testbenutzer aus Ihrer DB)
+            const { data: loginData, error: loginError } = await supabaseClient.auth.signInWithPassword({
+                email: 'stuckinicholas@gmail.com', // E-Mail eines Testbenutzers
+                password: 'S:2880damQ94',   // Passwort des Testbenutzers
+            });
+
+            if (loginError) {
+                // Diese spezielle Prüfung fängt den "Invalid API Key" Fehler früh ab.
+                if (loginError.message.includes("Invalid API key")) {
+                     throw new Error(`Login-Fehler: Invalid API key. Der ANON KEY ist definitiv falsch oder veraltet. Bitte holen Sie den neuesten Schlüssel aus dem Supabase Dashboard.`);
+                }
+                throw new Error(`Login-Fehler: ${loginError.message}`);
+            }
+            
+            resultElement.textContent = "Login erfolgreich. Lade Kulturen...";
+
+            const { data, error } = await supabaseClient.from('pflanzen').select('kultur');
+
+            if (error) {
+                throw error;
+            }
+
+            resultElement.textContent = `Erfolg! Daten geladen:\n\n${JSON.stringify(data, null, 2)}`;
+            resultElement.classList.add('success');
+            
+        } catch (error) {
+            resultElement.textContent = `FEHLER:\n\nName: ${error.name}\nMessage: ${error.message}\n\nBitte überprüfen Sie den API Key, die URL und die RLS-Policies für die 'pflanzen'-Tabelle.`;
+            resultElement.classList.add('error');
+            console.error(error);
+        }
+    }
+
+    testConnection();
+</script>
+</body>
+</html>
+

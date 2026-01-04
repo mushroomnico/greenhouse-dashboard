@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Greenhouse Data Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .view { transition: opacity 0.2s ease-in-out; }
+        
+        /* Button mit schwarzem Band (Rand) */
+        .btn-primary { 
+            @apply bg-[#3a5a40] text-white py-4 px-6 rounded-2xl font-bold transition-all shadow-lg uppercase tracking-widest flex items-center justify-center gap-2;
+            border: 4px solid #000000 !important; 
+        }
+        .btn-primary:hover { @apply bg-[#344e41] scale-[1.01] shadow-xl; }
+        .btn-primary:active { @apply scale-95; }
+
+        .nav-link.active { @apply bg-[#a3b18a] text-[#344e41] font-bold; }
+        
+        /* Input Styling: Permanente Umrandung */
+        input, select { 
+            @apply w-full p-4 bg-white rounded-xl outline-none transition-all shadow-sm;
+            border: 2px solid #6b7280 !important; 
+            display: block !important;
+        }
+        
+        input:focus {
+            border-color: #3a5a40 !important;
+            box-shadow: 0 0 0 4px rgba(58, 90, 64, 0.1);
+        }
+        
+        input[type=number] { -moz-appearance: textfield; }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+        /* Differenzierte Schriftarten für Header vs Parameter */
+        label { @apply block text-[10px] font-black uppercase text-gray-400 mb-2 ml-1 tracking-widest; }
+        
+        /* Sektions-Karten (Unterkapitel) */
+        .form-section-card { @apply bg-white p-8 rounded-[2rem] border border-gray-200 mb-8 shadow-sm; }
+        .section-header { @apply flex items-center gap-4 mb-8 pb-4 border-b-2 border-gray-50; }
+        .section-header h3 { @apply text-xl font-black text-[#1a2e1d] tracking-tight; } 
+        .section-icon { @apply w-10 h-10 flex items-center justify-center bg-[#3a5a40] text-white rounded-xl text-xl shadow-md; }
+
+        /* Sidebar Progress Indicator (Klickbar) */
+        .progress-step { @apply flex items-center gap-4 p-3 rounded-2xl transition-all border-2 border-transparent cursor-default; }
+        .progress-step.clickable { @apply cursor-pointer hover:bg-white/10 hover:border-white/20; }
+        .progress-step.active { @apply bg-white/10 border-white/20; }
+        .progress-step.done { @apply opacity-100 text-[#a3b18a]; }
+        .progress-dot { @apply w-2 h-2 rounded-full bg-white/20 transition-all; }
+        .progress-step.active .progress-dot { @apply bg-[#a3b18a] scale-150 shadow-[0_0_8px_#a3b18a]; }
+        .progress-step.done .progress-dot { @apply bg-[#a3b18a]; }
+
+        /* Login Troubleshooting Steps */
+        .step-pill { @apply w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-600 text-[10px] font-bold mr-3 shrink-0 transition-colors; }
+        .step-active { @apply bg-blue-500 text-white; }
+        .step-error { @apply bg-red-600 text-white shadow-[0_0_8px_rgba(220,38,38,0.5)]; }
+        .step-success { @apply bg-green-600 text-white shadow-[0_0_8px_rgba(22,163,74,0.5)]; }
+
+        .card-admin { @apply bg-white p-6 rounded-3xl shadow-md border-l-8 border-yellow-400 mb-6 transition-all hover:shadow-xl; }
+        .wizard-card { @apply bg-white p-10 rounded-[3rem] shadow-2xl border border-gray-100 max-w-2xl mx-auto; }
+        
+        .back-btn { 
+            @apply flex items-center justify-center gap-2 text-[10px] font-black uppercase text-gray-400 hover:text-[#344e41] transition-all py-2 px-4 rounded-xl border-2 border-transparent hover:border-gray-200 bg-white shadow-sm;
+        }
+
+        #toast { transition: all 0.3s ease; transform: translateY(100px); }
+        #toast.show { opacity: 1; transform: translateY(0); }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+</head>
+<body class="text-gray-800">
+
+    <div id="toast" class="fixed bottom-5 right-5 text-white py-4 px-8 rounded-2xl shadow-2xl opacity-0 z-50 text-sm font-bold flex items-center gap-3"></div>
+
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="w-80 bg-[#344e41] text-white flex flex-col p-8 shadow-2xl shrink-0 border-r border-black/10">
+            <div class="mb-12">
+                <h1 class="text-2xl font-black text-[#a3b18a] tracking-tighter italic">GREENHOUSE <span class="text-white font-light not-italic text-sm tracking-widest ml-1 uppercase">Cloud</span></h1>
+                <div class="mt-4 flex items-center gap-2 bg-black/20 p-2 px-3 rounded-full w-fit">
+                    <span id="status-dot" class="w-2 h-2 rounded-full bg-gray-500 shadow-sm"></span>
+                    <span id="status-text" class="text-[9px] font-black uppercase tracking-widest text-gray-300">Offline</span>
+                </div>
+            </div>
+
+            <!-- Sidebar Overview / Wizard Tracker -->
+            <div id="sidebar-overview" class="hidden space-y-8 flex-1">
+                <div id="user-display" class="p-5 bg-white/5 rounded-[2rem] border border-white/10 text-center">
+                    <div class="w-12 h-12 bg-[#a3b18a] rounded-2xl mx-auto mb-4 flex items-center justify-center text-[#344e41] text-xl font-black shadow-lg">
+                        <span id="user-initial">U</span>
+                    </div>
+                    <p id="current-user-email" class="text-xs font-medium truncate opacity-60 mb-1"></p>
+                    <p id="current-user-role" class="text-[9px] font-black uppercase tracking-[0.2em] text-[#a3b18a]"></p>
+                </div>
+
+                <div class="space-y-2">
+                    <p class="px-4 text-[10px] uppercase text-white/30 font-black tracking-[0.2em] mb-4">Übersicht</p>
+                    
+                    <div id="step-nav-dashboard" class="progress-step clickable group" onclick="showView('standort-view')">
+                        <div class="progress-dot group-hover:bg-[#a3b18a]"></div>
+                        <div><p class="text-[10px] font-black uppercase opacity-60">🏠 Dashboard</p></div>
+                    </div>
+
+                    <div id="step-nav-loc" class="progress-step opacity-30 transition-all" onclick="navigateToStep(1)">
+                        <div class="progress-dot"></div>
+                        <div><p class="text-[10px] font-black uppercase opacity-60">1. Standort</p><p id="side-loc-val" class="text-sm font-bold">-</p></div>
+                    </div>
+
+                    <div id="step-nav-haus" class="progress-step opacity-30 transition-all" onclick="navigateToStep(2)">
+                        <div class="progress-dot"></div>
+                        <div><p class="text-[10px] font-black uppercase opacity-60">2. Haus</p><p id="side-haus-val" class="text-sm font-bold">-</p></div>
+                    </div>
+
+                    <div id="step-nav-cat" class="progress-step opacity-30 transition-all" onclick="navigateToStep(3)">
+                        <div class="progress-dot"></div>
+                        <div><p class="text-[10px] font-black uppercase opacity-60">3. Kategorie</p><p id="side-cat-val" class="text-sm font-bold">-</p></div>
+                    </div>
+                </div>
+
+                <div id="admin-nav-item" class="hidden">
+                    <p class="px-4 text-[10px] uppercase text-white/30 font-black mb-4 tracking-widest">Verwaltung</p>
+                    <a href="#" data-view="admin-approval-view" class="nav-link flex items-center p-4 rounded-2xl text-sm bg-white/5 border border-white/5 text-[#a3b18a] hover:bg-white/10 font-black tracking-tight transition-all">🔍 Freigaben prüfen</a>
+                </div>
+            </div>
+
+            <button id="logout-btn" class="hidden w-full py-4 mt-8 bg-red-500/10 hover:bg-red-500/20 text-red-200 border border-red-500/20 rounded-2xl transition-all text-[10px] font-black uppercase tracking-widest">Abmelden</button>
+        </aside>
+
+        <main class="flex-1 overflow-y-auto p-8 md:p-16 relative">
+            <div class="max-w-6xl mx-auto">
+
+                <!-- 0. LOGIN -->
+                <div id="login-view" class="view">
+                    <div class="bg-white p-12 rounded-[3rem] shadow-2xl max-w-md mx-auto mt-10 border border-gray-100">
+                        <h2 class="text-3xl font-black text-[#344e41] mb-10 text-center tracking-tight uppercase">Anmelden</h2>
+                        <form id="login-form" class="space-y-6">
+                            <div><label>E-Mail Adresse</label><input type="email" id="login-email" required placeholder="name@firma.ch"></div>
+                            <div><label>Passwort</label><input type="password" id="login-password" required placeholder="••••••••"></div>
+                            <button type="submit" id="login-btn" class="btn-primary w-full mt-4">System betreten</button>
+                        </form>
+                        <div id="login-troubleshooting" class="mt-12 pt-8 border-t border-gray-100 hidden text-center">
+                            <h3 class="text-[10px] font-black text-red-500 uppercase tracking-widest mb-6 italic">Prüfprotokoll</h3>
+                            <div class="space-y-4 inline-block text-left">
+                                <div class="flex items-center" id="step-1"><span class="step-pill">1</span><p class="text-[11px] font-bold text-gray-500 uppercase">Leitungstest (Server)</p></div>
+                                <div class="flex items-center" id="step-2"><span class="step-pill">2</span><p class="text-[11px] font-bold text-gray-500 uppercase">API-Schlüsselprüfung</p></div>
+                                <div class="flex items-center" id="step-3"><span class="step-pill">3</span><p class="text-[11px] font-bold text-gray-500 uppercase">Zugangsdaten-Check</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 1. STANDORT -->
+                <div id="standort-view" class="view hidden text-center">
+                    <h2 class="text-4xl font-black mb-16 text-[#344e41] tracking-tighter uppercase">Standort wählen</h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-8 max-w-4xl mx-auto">
+                        <button class="loc-btn bg-white p-16 rounded-[3.5rem] shadow-sm hover:shadow-2xl border-2 border-gray-200 hover:border-[#3a5a40] transition-all group" data-loc="TGW">
+                            <span class="text-4xl font-black block mb-4 group-hover:scale-105 transition-transform">Tägerwilen</span>
+                            <span class="bg-[#3a5a40] text-white text-[10px] px-8 py-2 rounded-full font-black uppercase tracking-widest">TGW</span>
+                        </button>
+                        <button class="loc-btn bg-white p-16 rounded-[3.5rem] shadow-sm hover:shadow-2xl border-2 border-gray-200 hover:border-[#3a5a40] transition-all group" data-loc="ELN">
+                            <span class="text-4xl font-black block mb-4 group-hover:scale-105 transition-transform">Ellikon</span>
+                            <span class="bg-[#3a5a40] text-white text-[10px] px-8 py-2 rounded-full font-black uppercase tracking-widest">ELN</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 2. HAUS -->
+                <div id="haus-view" class="view hidden">
+                    <div class="wizard-card text-center">
+                        <div class="flex justify-between items-center mb-10">
+                            <button onclick="showView('standort-view')" class="back-btn">← Standort</button>
+                            <h2 class="text-xl font-black text-[#344e41] uppercase tracking-tighter">Gewächshaus</h2>
+                            <div class="w-16"></div>
+                        </div>
+                        <div id="haus-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-6"></div>
+                    </div>
+                </div>
+
+                <!-- 3. KATEGORIE -->
+                <div id="task-choice-view" class="view hidden text-center">
+                    <div class="flex justify-center mb-10">
+                        <button onclick="showView('haus-view')" class="back-btn">← Hauswahl</button>
+                    </div>
+                    <h2 class="text-3xl font-black mb-12 text-[#344e41] uppercase tracking-tighter">Mess-Kategorie</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+                        <button onclick="startKlimaFlow()" class="p-12 bg-white rounded-[2.5rem] shadow-md hover:shadow-2xl transition-all border-b-[16px] border-[#588157] group">
+                            <span class="text-7xl block mb-6 transition-transform group-hover:scale-110">🌡️</span>
+                            <span class="text-xl font-black uppercase tracking-tighter text-[#344e41]">Klima-Messungen</span>
+                        </button>
+                        <button onclick="startProduktionFlow()" class="p-12 bg-white rounded-[2.5rem] shadow-md hover:shadow-2xl transition-all border-b-[16px] border-[#3a5a40] group">
+                            <span class="text-7xl block mb-6 transition-transform group-hover:scale-110">🏗️</span>
+                            <span class="text-xl font-black uppercase tracking-tighter text-[#344e41]">Pflanzen-Daten</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 4. PFLANZEN WAHL -->
+                <div id="pflanzen-wahl-view" class="view hidden">
+                    <div class="wizard-card">
+                        <div class="flex justify-between items-center mb-10">
+                            <button onclick="showView('task-choice-view')" class="back-btn">← Zurück</button>
+                            <h2 class="text-xl font-black text-[#344e41] uppercase">Kultur & Sorte</h2>
+                            <div class="w-16"></div>
+                        </div>
+                        <div class="space-y-8">
+                            <div><label>Kultur auswählen</label><select id="kultur-wizard-sel" class="kultur-sel"></select></div>
+                            <div><label>Sorte auswählen</label><select id="sorte-wizard-sel" class="sorte-sel"><option>Zuerst Kultur wählen...</option></select></div>
+                            <div class="grid grid-cols-2 gap-4 pt-4">
+                                <button onclick="nextAfterPflanzenWahl('produktion-form-view')" class="btn-primary">Produktion</button>
+                                <button onclick="nextAfterPflanzenWahl('wachstum-form-view')" class="btn-primary">Wachstum</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FORM: KLIMA -->
+                <div id="klima-form-view" class="view hidden">
+                    <form id="klima-form" class="space-y-8 pb-20">
+                        <div class="flex justify-between items-center mb-10 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                            <button type="button" onclick="showView('task-choice-view')" class="back-btn">← Zurück</button>
+                            <h2 class="text-2xl font-black text-[#344e41] uppercase tracking-tighter italic">🌡️ Klima-Messungen</h2>
+                            <div class="w-16"></div>
+                        </div>
+
+                        <div class="form-section-card">
+                            <div class="section-header"><div class="section-icon">🌡️</div><h3>Aussenbereich Temperaturen</h3></div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                <div><label>Tag Temp (°C)</label><input type="number" step="any" name="aussen_tagestemperatur_c"></div>
+                                <div><label>Nacht Temp (°C)</label><input type="number" step="any" name="aussen_nachttemperatur_c"></div>
+                                <div><label>Schnitt Temp (°C)</label><input type="number" step="any" name="aussen_durchschnittstemp_c"></div>
+                                <div><label>Tageslänge</label><input type="text" name="aussen_tageslaenge_uhr" placeholder="z.B. 14:20"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-section-card">
+                            <div class="section-header"><div class="section-icon">💨</div><h3>Wind & Strahlung</h3></div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div><label>Strahlung (J/cm²)</label><input type="number" step="any" name="aussen_strahlungssumme_j_cm2"></div>
+                                <div><label>Wind Tag (m/s)</label><input type="number" step="any" name="aussen_windschnellheit_m_s"></div>
+                                <div><label>Wind Nacht (m/s)</label><input type="number" step="any" name="aussen_windschnellheit_nacht_m_s"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-section-card">
+                            <div class="section-header"><div class="section-icon">💧</div><h3>Feuchtigkeit & FD Aussen</h3></div>
+                            <div class="grid grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div><label>Feuchte Tag %</label><input type="number" step="any" name="aussen_feuchtigkeit_tag_proz"></div>
+                                <div><label>FD Tag (g/m³)</label><input type="number" step="any" name="aussen_fd_tag_g_m3"></div>
+                                <div><label>Feuchte Nacht %</label><input type="number" step="any" name="aussen_feuchtigkeit_nacht_proz"></div>
+                                <div><label>FD Nacht (g/m³)</label><input type="number" step="any" name="aussen_fd_nacht_g_m3"></div>
+                                <div><label>FD Schnitt (g/m³)</label><input type="number" step="any" name="aussen_fd_durchschnitt_g_m3"></div>
+                                <div><label>Feuchte Schnitt %</label><input type="number" step="any" name="aussen_feuchtigkeit_durchschnitt_proz"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-section-card">
+                            <div class="section-header"><div class="section-icon">🏢</div><h3>Innenraum & Technik</h3></div>
+                            <div class="grid grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div><label>Energieschirm %</label><input type="number" step="any" name="schirm_energieschirm_proz"></div>
+                                <div><label>GH Gem Tag °C</label><input type="number" step="any" name="gh_gem_tag_c"></div>
+                                <div><label>GH Gem Nacht °C</label><input type="number" step="any" name="gh_gem_nacht_c"></div>
+                                <div><label>GH Ber. Tag Temp</label><input type="number" step="any" name="gh_ber_taeg_temp"></div>
+                                <div><label>Rohr Tag °C</label><input type="number" step="any" name="rohr_temp_tag_c"></div>
+                                <div><label>Rohr Nacht °C</label><input type="number" step="any" name="rohr_temp_nacht_c"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-section-card">
+                            <div class="section-header"><div class="section-icon">☁️</div><h3>CO2 & Detail-Feuchte</h3></div>
+                            <div class="grid grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div><label>CO2 Tag (ppm)</label><input type="number" step="any" name="co2_tag_ppm"></div>
+                                <div><label>CO2 Nacht (ppm)</label><input type="number" step="any" name="co2_nacht_ppm"></div>
+                                <div><label>CO2 Feed (kg/ha)</label><input type="number" step="any" name="co2_einspeisung_kg_ha"></div>
+                                <div><label>Feucht FD Tag 2</label><input type="number" step="any" name="feucht_fd_tag_g_m3_2"></div>
+                                <div><label>Feucht FD Nacht 2</label><input type="number" step="any" name="feucht_fd_nacht_g_m3_2"></div>
+                                <div><label>Feucht RF Tag %</label><input type="number" step="any" name="feucht_rf_tag_proz"></div>
+                                <div><label>Feucht RF Nacht %</label><input type="number" step="any" name="feucht_rf_nacht_proz"></div>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-primary w-full py-6 shadow-2xl mt-10">Klima-Eintrag absenden</button>
+                    </form>
+                </div>
+
+                <!-- FORM: PRODUKTION -->
+                <div id="produktion-form-view" class="view hidden">
+                    <form id="produktion-form" class="space-y-8 pb-20">
+                        <div class="flex justify-between items-center mb-10 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                            <button type="button" onclick="showView('pflanzen-wahl-view')" class="back-btn">← Sorte ändern</button>
+                            <h2 class="text-2xl font-black text-[#344e41] uppercase tracking-tighter">🏗️ Produktion</h2>
+                            <div class="w-16"></div>
+                        </div>
+
+                        <div class="form-section-card">
+                            <div class="section-header"><div class="section-icon">📊</div><h3>Ernte & Basis-Metriken</h3></div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div><label>Blüten / Stängel</label><input type="number" step="any" name="blueten_pro_staengel"></div>
+                                <div><label>Gesetzte Fr / Stängel</label><input type="number" step="any" name="gesetzte_fruechte_pro_staengel"></div>
+                                <div><label>Geerntete Fr / Stängel</label><input type="number" step="any" name="geernteten_fruechte_pro_staengel"></div>
+                                <div><label>Fruchtansatz x m²</label><input type="number" step="any" name="fruchtansatz_x_m2"></div>
+                                <div><label>Produktion x m²</label><input type="number" step="any" name="produktion_x_m2"></div>
+                                <div><label>Erntegeschw. (Truss/W)</label><input type="number" step="any" name="erntegeschwindigkeit_truss_woche"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-section-card">
+                            <div class="section-header"><div class="section-icon">🔢</div><h3>Entwicklungsstand</h3></div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div><label>Nr Blühend (Obere)</label><input type="number" step="any" name="truss_nr_bluehende_obere_truss"></div>
+                                <div><label>Nr Gesetzte (Obere)</label><input type="number" step="any" name="truss_nr_gesetzte_fruechte_obere_truss"></div>
+                                <div><label>Nr Ernte (Obere)</label><input type="number" step="any" name="truss_nr_ernte_fruechte_obere_truss"></div>
+                                <div><label>Fruchtzeit</label><input type="number" step="any" name="fruchtzeit"></div>
+                                <div><label>Blütezeit Truss (W)</label><input type="number" step="any" name="bluetezeit_truss_woche"></div>
+                            </div>
+                        </div>
+
+                        <!-- Ernte Trends -->
+                        <div class="form-section-card">
+                            <div class="section-header"><div class="section-icon">📈</div><h3>Trend: Geerntete Früchte (Obere Truss)</h3></div>
+                            <div class="grid grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div><label>Aktuell</label><input type="number" step="any" name="geernteten_fruechte_auf_der_oberen_truss"></div>
+                                <div><label>Minus 1</label><input type="number" step="any" name="geernteten_fruechte_auf_der_oberen_truss_minus1"></div>
+                                <div><label>Minus 2</label><input type="number" step="any" name="geernteten_fruechte_auf_der_oberen_truss_minus2"></div>
+                                <div><label>Minus 3</label><input type="number" step="any" name="geernteten_fruechte_auf_der_oberen_truss_minus3"></div>
+                                <div><label>Minus 4</label><input type="number" step="any" name="geernteten_fruechte_auf_der_oberen_truss_minus4"></div>
+                                <div><label>Minus 5</label><input type="number" step="any" name="geernteten_fruechte_auf_der_oberen_truss_minus5"></div>
+                            </div>
+                        </div>
+
+                        <!-- Blüten Trends -->
+                        <div class="form-section-card">
+                            <div class="section-header"><div class="section-icon">🌸</div><h3>Trend: Blüten (Obere Truss)</h3></div>
+                            <div class="grid grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div><label>Aktuell</label><input type="number" step="any" name="blueten_auf_der_oberen_truss"></div>
+                                <div><label>Minus 1</label><input type="number" step="any" name="blueten_auf_der_oberen_truss_minus1"></div>
+                                <div><label>Minus 2</label><input type="number" step="any" name="blueten_auf_der_oberen_truss_minus2"></div>
+                                <div><label>Minus 3</label><input type="number" step="any" name="blueten_auf_der_oberen_truss_minus3"></div>
+                                <div><label>Minus 4</label><input type="number" step="any" name="blueten_auf_der_oberen_truss_minus4"></div>
+                                <div><label>Minus 5</label><input type="number" step="any" name="blueten_auf_der_oberen_truss_minus5"></div>
+                            </div>
+                        </div>
+
+                        <!-- Fruchtansatz Trends -->
+                        <div class="form-section-card">
+                            <div class="section-header"><div class="section-icon">🍅</div><h3>Trend: Gesetzte Früchte (Obere Truss)</h3></div>
+                            <div class="grid grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div><label>Aktuell</label><input type="number" step="any" name="gesetzten_fruechte_auf_der_oberen_truss"></div>
+                                <div><label>Minus 1</label><input type="number" step="any" name="gesetzten_fruechte_auf_der_oberen_truss_minus1"></div>
+                                <div><label>Minus 2</label><input type="number" step="any" name="gesetzten_fruechte_auf_der_oberen_truss_minus2"></div>
+                                <div><label>Minus 3</label><input type="number" step="any" name="gesetzten_fruechte_auf_der_oberen_truss_minus3"></div>
+                                <div><label>Minus 4</label><input type="number" step="any" name="gesetzten_fruechte_auf_der_oberen_truss_minus4"></div>
+                                <div><label>Minus 5</label><input type="number" step="any" name="gesetzten_fruechte_auf_der_oberen_truss_minus5"></div>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-primary w-full py-6 mt-10 text-lg">Produktion jetzt einsenden</button>
+                    </form>
+                </div>
+
+                <!-- FORM: WACHSTUM -->
+                <div id="wachstum-form-view" class="view hidden">
+                    <form id="wachstum-form" class="space-y-6 pb-20">
+                        <div class="flex justify-between items-center mb-10 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                            <button type="button" onclick="showView('pflanzen-wahl-view')" class="back-btn">← Sorte ändern</button>
+                            <h2 class="text-2xl font-black text-[#344e41] uppercase tracking-tighter">🌱 Wachstum</h2>
+                            <div class="w-16"></div>
+                        </div>
+
+                        <div class="form-section-card">
+                            <div class="section-header"><div class="section-icon">📐</div><h3>Geometrie & Dimensionen</h3></div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div><label>Stängeldicke (mm)</label><input type="number" step="any" name="staengeldicke_mm"></div>
+                                <div><label>Blattlänge (cm)</label><input type="number" step="any" name="blattlaenge_cm"></div>
+                                <div><label>Blattbreite (cm)</label><input type="number" step="any" name="blattbreite_cm"></div>
+                                <div><label>Blütenhöhe (cm)</label><input type="number" step="any" name="bluehtenhoehe_cm"></div>
+                                <div><label>Blattrankenlänge (cm)</label><input type="number" step="any" name="blattrankenlaenge_cm"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-section-card">
+                            <div class="section-header"><div class="section-icon">📈</div><h3>Zuwachs & Vitalität</h3></div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div><label>Zuwachs (cm/W)</label><input type="number" step="any" name="laengenzuwachs_cm_woche"></div>
+                                <div><label>Blätter / Stängel</label><input type="number" step="any" name="blaetter_pro_staengel"></div>
+                                <div><label>Blätter / Pflanze</label><input type="number" step="any" name="blaetter_pro_pflanze"></div>
+                                <div><label>Truss / Stängel</label><input type="number" step="any" name="anzahl_truss_staengel"></div>
+                                <div><label>Neue Trusses / W</label><input type="number" step="any" name="new_trusses_woche"></div>
+                                <div><label>Senkstärke</label><input type="number" step="any" name="senkstaerke"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-section-card">
+                            <div class="section-header"><div class="section-icon">🏆</div><h3>Leistung & Indizes</h3></div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                <div><label>Pflanzenlast x m²</label><input type="number" step="any" name="pflanzenlast_x_m2"></div>
+                                <div><label>Blätter / m²</label><input type="number" step="any" name="anzahl_der_blaetter_m2"></div>
+                                <div><label>Blattflächenfaktor %</label><input type="number" step="any" name="blattflaechenfaktor_proz"></div>
+                                <div><label>LAI (m²/m²)</label><input type="number" step="any" name="lai_m2_m2"></div>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-primary w-full py-6 mt-10">Wachstumsdaten einsenden</button>
+                    </form>
+                </div>
+
+                <!-- ADMIN CONTROL -->
+                <div id="admin-approval-view" class="view hidden">
+                    <div class="flex justify-between items-end mb-12">
+                        <div>
+                            <h2 class="text-4xl font-black text-[#344e41] uppercase tracking-tighter">Kontrolle</h2>
+                            <p class="text-gray-400 text-[10px] font-black uppercase tracking-[0.2em] mt-2 italic">Pipeline für offene Freigaben</p>
+                        </div>
+                        <button onclick="loadPendingEntries()" class="bg-white border-2 border-gray-300 px-8 py-3 rounded-2xl text-[10px] font-black uppercase hover:bg-gray-50 shadow-md">↻ Liste aktualisieren</button>
+                    </div>
+                    <div id="approval-list" class="space-y-8 pb-32"></div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+    const { createClient } = supabase;
+    const SUPABASE_URL = 'https://ixlwcourvdblienxfexn.supabase.co'; 
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4bHdjb3VydmRibGllbnhmZXhuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQxNjY3MzEsImV4cCI6MjA2OTc0MjczMX0.B4BYlhw1azNCankb6AXGrKGKBYaC4MBd3V0tzRjIqts';
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    
+    const greenhouseData = { 
+        TGW: ['2+3', '4', '5', '6', '7'], 
+        ELN: ['19', '20', '21', '22', '23', '31', '32', '33', '34'] 
+    };
+
+    let appState = { 
+        user: null, 
+        location: null, 
+        haus: null, 
+        selectedKultur: null, 
+        selectedSorte: null,
+        currentView: 'login-view'
+    };
+
+    const showToast = (m, isError = false) => {
+        const t = document.getElementById('toast');
+        if (!t) return;
+        t.innerHTML = `<span>${isError ? '⚠️' : '✅'}</span> ${m}`;
+        t.className = `fixed bottom-5 right-5 text-white py-4 px-8 rounded-2xl shadow-2xl z-50 text-sm font-bold show ${isError ? 'bg-red-600' : 'bg-[#3a5a40]'}`;
+        setTimeout(() => t.classList.remove('show'), 5000);
+    };
+
+    // Zentrale Navigation
+    window.showView = (id) => {
+        appState.currentView = id;
+        document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('hidden');
+        
+        updateProgressNav();
+        if(id === 'admin-approval-view') loadPendingEntries();
+    };
+
+    const updateProgressNav = () => {
+        const views = { 
+            'standort-view': 1, 'haus-view': 2, 'task-choice-view': 3, 
+            'pflanzen-wahl-view': 4, 'klima-form-view': 4, 
+            'produktion-form-view': 5, 'wachstum-form-view': 5 
+        };
+        const currentStep = views[appState.currentView] || 0;
+        
+        const locStep = document.getElementById('step-nav-loc');
+        const hausStep = document.getElementById('step-nav-haus');
+        const catStep = document.getElementById('step-nav-cat');
+
+        if(locStep) {
+            locStep.classList.toggle('active', currentStep === 1);
+            locStep.classList.toggle('done', currentStep > 1);
+            locStep.classList.toggle('opacity-30', currentStep < 1);
+            locStep.classList.toggle('clickable', currentStep > 1);
+            document.getElementById('side-loc-val').textContent = appState.location || '-';
+        }
+        if(hausStep) {
+            hausStep.classList.toggle('active', currentStep === 2);
+            hausStep.classList.toggle('done', currentStep > 2);
+            hausStep.classList.toggle('opacity-30', currentStep < 2);
+            hausStep.classList.toggle('clickable', currentStep > 2);
+            document.getElementById('side-haus-val').textContent = appState.haus ? `Haus ${appState.haus}` : '-';
+        }
+        if(catStep) {
+            catStep.classList.toggle('active', currentStep >= 3);
+            catStep.classList.toggle('opacity-30', currentStep < 3);
+            catStep.classList.toggle('clickable', currentStep > 3);
+            let catName = '-';
+            if(appState.currentView.includes('klima')) catName = 'Klima';
+            else if(appState.currentView.includes('produktion')) catName = 'Produktion';
+            else if(appState.currentView.includes('wachstum')) catName = 'Wachstum';
+            document.getElementById('side-cat-val').textContent = catName;
+        }
+    };
+
+    window.navigateToStep = (stepNum) => {
+        const views = { 'standort-view': 1, 'haus-view': 2, 'task-choice-view': 3, 'pflanzen-wahl-view': 4, 'klima-form-view': 4, 'produktion-form-view': 5, 'wachstum-form-view': 5 };
+        const currentStep = views[appState.currentView] || 0;
+        if (stepNum < currentStep) {
+            if (stepNum === 1) { appState.location = null; appState.haus = null; showView('standort-view'); }
+            else if (stepNum === 2 && appState.location) { appState.haus = null; showView('haus-view'); }
+            else if (stepNum === 3 && appState.haus) { showView('task-choice-view'); }
+        }
+    };
+
+    const updateUI = (user) => {
+        appState.user = user;
+        const sidebar = document.getElementById('sidebar-overview');
+        const logout = document.getElementById('logout-btn');
+        if (user) {
+            if (sidebar) sidebar.classList.remove('hidden');
+            if (logout) logout.classList.remove('hidden');
+            const emailEl = document.getElementById('current-user-email');
+            if (emailEl) emailEl.textContent = user.email;
+            const initialEl = document.getElementById('user-initial');
+            if (initialEl) initialEl.textContent = user.email[0].toUpperCase();
+            const role = user.app_metadata?.role || 'user';
+            const roleEl = document.getElementById('current-user-role');
+            if (roleEl) { 
+                roleEl.textContent = role; 
+                roleEl.className = role === 'admin' ? "text-[9px] font-black uppercase tracking-[0.2em] text-[#a3b18a]" : "text-[9px] font-black uppercase tracking-[0.2em] text-yellow-500"; 
+            }
+            const adminNav = document.getElementById('admin-nav-item');
+            if (adminNav) adminNav.classList.toggle('hidden', role !== 'admin');
+            showView('standort-view');
+            checkInitialConnection();
+        } else {
+            if (sidebar) sidebar.classList.add('hidden');
+            if (logout) logout.classList.add('hidden');
+            showView('login-view');
+        }
+    };
+
+    function updateStepUI(stepNum, status) {
+        const step = document.getElementById(`step-${stepNum}`);
+        if(!step) return;
+        const pill = step.querySelector('.step-pill');
+        if (!pill) return;
+        pill.className = 'step-pill transition-all flex items-center justify-center rounded-full w-6 h-6 mr-3 text-[10px] font-bold';
+        if(status === 'active') pill.classList.add('step-active');
+        else if(status === 'error') pill.classList.add('step-error');
+        else if(status === 'success') pill.classList.add('step-success');
+    }
+
+    async function checkInitialConnection() {
+        updateStepUI(1, 'active');
+        try {
+            await supabaseClient.from('klima_messungen').select('count', { count: 'exact', head: true });
+            const dot = document.getElementById('status-dot');
+            if (dot) dot.className = "w-2 h-2 rounded-full bg-green-500 mr-2 shadow-[0_0_10px_#22c55e]";
+            const text = document.getElementById('status-text');
+            if (text) text.textContent = "Verbunden";
+            updateStepUI(1, 'success');
+        } catch (err) {
+            const dot = document.getElementById('status-dot');
+            if (dot) dot.className = "w-2 h-2 rounded-full bg-red-500 mr-2";
+            updateStepUI(1, 'error');
+        }
+    }
+
+    // EVENT LISTENERS
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('login-btn');
+            const troubleshooting = document.getElementById('login-troubleshooting');
+            if (btn) { btn.disabled = true; btn.textContent = "PRÜFE..."; }
+            updateStepUI(2, 'active'); updateStepUI(3, 'active');
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email: document.getElementById('login-email').value, password: document.getElementById('login-password').value });
+            if (error) {
+                if (troubleshooting) troubleshooting.classList.remove('hidden');
+                if(error.status === 401 || error.status === 403) { updateStepUI(2, 'success'); updateStepUI(3, 'error'); } 
+                else { updateStepUI(2, 'error'); }
+                showToast(error.message, true);
+                if (btn) { btn.disabled = false; btn.textContent = "Anmelden"; }
+            } else { updateStepUI(2, 'success'); updateStepUI(3, 'success'); updateUI(data.user); }
+        });
+    }
+
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) { logoutBtn.addEventListener('click', async () => { await supabaseClient.auth.signOut(); updateUI(null); }); }
+
+    // STANDORT BUTTONS REPARIERT
+    document.querySelectorAll('.loc-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const loc = btn.dataset.loc;
+            appState.location = loc;
+            const locName = loc === 'TGW' ? 'Tägerwilen' : 'Ellikon';
+            const displayEl = document.getElementById('loc-display-name');
+            if (displayEl) displayEl.textContent = locName;
+            
+            const grid = document.getElementById('haus-grid');
+            if (grid) {
+                grid.innerHTML = '';
+                greenhouseData[loc].forEach(h => {
+                    const b = document.createElement('button');
+                    b.className = "p-8 bg-white border-2 border-gray-400 rounded-[2rem] font-black text-2xl hover:bg-[#3a5a40] hover:text-white transition-all shadow-sm";
+                    b.textContent = h;
+                    b.onclick = () => { 
+                        appState.haus = h; 
+                        const activeHausEl = document.getElementById('active-haus');
+                        if (activeHausEl) activeHausEl.textContent = h;
+                        const ctx = document.getElementById('context-info');
+                        if (ctx) ctx.classList.remove('hidden');
+                        showView('task-choice-view'); 
+                    };
+                    grid.appendChild(b);
+                });
+                showView('haus-view');
+            }
+        });
+    });
+
+    window.startKlimaFlow = () => showView('klima-form-view');
+    window.startProduktionFlow = async () => { await loadPflanzenDropdowns(); showView('pflanzen-wahl-view'); };
+
+    window.nextAfterPflanzenWahl = (target) => {
+        const kSel = document.getElementById('kultur-wizard-sel');
+        const sSel = document.getElementById('sorte-wizard-sel');
+        appState.selectedKultur = kSel?.value;
+        appState.selectedSorte = sSel?.value;
+        if(!appState.selectedKultur || !appState.selectedSorte) { showToast("Kultur & Sorte wählen!", true); return; }
+        showView(target);
+    };
+
+    async function loadPflanzenDropdowns() {
+        const { data } = await supabaseClient.from('pflanzen').select('kultur, sorte');
+        if(!data) return;
+        const kulturen = [...new Set(data.map(p => p.kultur))];
+        const kSel = document.getElementById('kultur-wizard-sel');
+        if (kSel) {
+            kSel.innerHTML = '<option value="">Kultur wählen...</option>' + kulturen.map(k => `<option value="${k}">${k}</option>`).join('');
+            kSel.onchange = (e) => {
+                const sorten = data.filter(p => p.kultur === e.target.value).map(p => p.sorte);
+                const sSel = document.getElementById('sorte-wizard-sel');
+                if (sSel) sSel.innerHTML = '<option value="">Sorte wählen...</option>' + sorten.map(s => `<option value="${s}">${s}</option>`).join('');
+            };
+        }
+    }
+
+    const handleFormSubmit = async (table, formId) => {
+        const form = document.getElementById(formId);
+        if (!form) return;
+        const rawData = Object.fromEntries(new FormData(form));
+        const payload = { 
+            standort: appState.location, haus: appState.haus, 
+            user_id: appState.user.id, zeitstempel: new Date().toISOString(), 
+            status: 'pending', kultur: appState.selectedKultur, sorte: appState.selectedSorte 
+        };
+        for (const [key, value] of Object.entries(rawData)) { payload[key] = (value === "" || value === null) ? null : value; }
+        const { error } = await supabaseClient.from(table).insert([payload]);
+        if(error) showToast("DB Fehler: " + error.message, true);
+        else { showToast("Erfolgreich gesendet!"); form.reset(); showView('task-choice-view'); }
+    };
+
+    document.getElementById('klima-form')?.addEventListener('submit', (e) => { e.preventDefault(); handleFormSubmit('klima_messungen', 'klima-form'); });
+    document.getElementById('produktion-form')?.addEventListener('submit', (e) => { e.preventDefault(); handleFormSubmit('produktion_messungen', 'produktion-form'); });
+    document.getElementById('wachstum-form')?.addEventListener('submit', (e) => { e.preventDefault(); handleFormSubmit('wachstum_messungen', 'wachstum-form'); });
+
+    window.loadPendingEntries = async () => {
+        const list = document.getElementById('approval-list');
+        if (!list) return;
+        list.innerHTML = '<div class="flex flex-col items-center py-20 text-gray-400 italic text-sm"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-[#3a5a40] mb-6"></div>Daten werden geladen...</div>';
+        try {
+            const [klima, prod, wach] = await Promise.all([
+                supabaseClient.from('klima_messungen').select('*').eq('status', 'pending'),
+                supabaseClient.from('produktion_messungen').select('*').eq('status', 'pending'),
+                supabaseClient.from('wachstum_messungen').select('*').eq('status', 'pending')
+            ]);
+            const all = [
+                ...(klima.data || []).map(d => ({...d, _table: 'klima_messungen', _label: '🌡️ Klima'})),
+                ...(prod.data || []).map(d => ({...d, _table: 'produktion_messungen', _label: '🏗️ Produktion'})),
+                ...(wach.data || []).map(d => ({...d, _table: 'wachstum_messungen', _label: '🌱 Wachstum'}))
+            ];
+            if (all.length === 0) { list.innerHTML = '<p class="text-center py-32 italic text-gray-400 text-sm uppercase font-black">Alles freigegeben.</p>'; return; }
+            list.innerHTML = '';
+            all.forEach(item => {
+                const card = document.createElement('div');
+                card.className = "card-admin shadow-md";
+                let detailsHtml = '<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6 w-full">';
+                const skipFields = ['id', 'user_id', 'zeitstempel', 'status', 'standort', 'haus', '_table', '_label'];
+                Object.entries(item).forEach(([key, val]) => { 
+                    if(!skipFields.includes(key)) { 
+                        const displayVal = (val === null || val === "") ? '<span class="text-gray-300">n/a</span>' : `<span class="font-bold text-[#3a5a40]">${val}</span>`; 
+                        const label = key.replace(/_/g, ' '); 
+                        detailsHtml += `<div class="bg-gray-50 p-3 rounded-2xl border border-gray-100 overflow-hidden"><p class="text-[8px] uppercase text-gray-400 font-black truncate">${label}</p><p class="text-xs truncate">${displayVal}</p></div>`; 
+                    } 
+                });
+                detailsHtml += '</div>';
+                const locName = item.standort === 'TGW' ? 'Tägerwilen' : 'Ellikon';
+                card.innerHTML = `<div class="w-full">
+                    <div class="flex justify-between items-center w-full mb-4">
+                        <div class="flex items-center gap-3"><span class="bg-gray-100 text-gray-400 px-4 py-1.5 rounded-full text-[10px] font-black uppercase">ID ${item.id}</span><span class="text-[12px] font-black text-[#3a5a40] uppercase tracking-widest">${item._label}</span></div>
+                        <div class="flex gap-2">
+                            <button onclick="approve('${item._table}', '${item.id}')" class="bg-green-50 text-green-700 px-6 py-2.5 rounded-2xl text-[10px] font-black hover:bg-green-100 border-2 border-green-200 uppercase transition-all">OK</button>
+                            <button onclick="reject('${item._table}', '${item.id}')" class="bg-red-50 text-red-700 px-6 py-2.5 rounded-2xl text-[10px] font-black hover:bg-red-100 border-2 border-red-200 uppercase transition-all">Löschen</button>
+                        </div>
+                    </div>
+                    <h3 class="text-2xl font-black text-[#344e41]">${locName} — Haus ${item.haus}</h3>
+                    <p class="text-[11px] text-gray-400 font-bold uppercase tracking-widest mt-2 italic">${new Date(item.zeitstempel).toLocaleString()}</p>
+                    ${detailsHtml}
+                </div>`;
+                list.appendChild(card);
+            });
+        } catch (err) { showToast("Ladefehler!", true); }
+    };
+
+    window.approve = async (table, id) => { 
+        const { error } = await supabaseClient.from(table).update({ status: 'approved' }).eq('id', id); 
+        if(error) showToast("Fehler!", true); else { showToast("Eintrag freigegeben!"); loadPendingEntries(); } 
+    };
+    window.reject = async (table, id) => { 
+        if(!confirm("Wirklich unwiderruflich löschen?")) return; 
+        const { error } = await supabaseClient.from(table).delete().eq('id', id); 
+        if(error) showToast("Fehler!", true); else { showToast("Eintrag wurde gelöscht."); loadPendingEntries(); } 
+    };
+
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    updateUI(session?.user ?? null);
+});
+</script>
+</body>
+</html>
